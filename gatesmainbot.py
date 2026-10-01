@@ -10,9 +10,9 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# Configured credentials
+# Configured credentials with your updated admin ID
 TOKEN = os.getenv("BOT_TOKEN", "8841797167:AAGqfC5laKal7Z7D_Q_PVDQJa7sQRri9BIY")
-ADMIN_IDS = [6918967434]
+ADMIN_IDS = [8480522053]
 
 # Initialize Bot and Dispatcher
 bot = Bot(token=TOKEN)
