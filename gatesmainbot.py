@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 from aiohttp import web
@@ -20,8 +21,26 @@ dp = Dispatcher(storage=storage)
 
 logging.basicConfig(level=logging.INFO)
 
-# Temporary in-memory storage for verification submissions (Admin Audit Panel)
-PENDING_VERIFICATIONS = {}
+# --- PERSISTENT DATABASE MANAGEMENT ---
+DB_FILE = "gatens_database.json"
+
+
+def load_database():
+  if os.path.exists(DB_FILE):
+    try:
+      with open(DB_FILE, "r") as f:
+        return json.load(f)
+    except Exception:
+      pass
+  return {"verifications": {}, "users": {}}
+
+
+def save_database(data):
+  try:
+    with open(DB_FILE, "w") as f:
+      json.dump(data, f, indent=4)
+  except Exception as e:
+    logging.error(f"Failed to save database: {e}")
 
 
 # --- FSM STATES ---
@@ -47,7 +66,7 @@ async def start_web_server():
   print(f"Web server started on port {port}")
 
 
-# --- FULL-WIDTH KEYBOARDS (NO EMOJIS, STYLIZED) ---
+# --- KEYBOARDS ---
 
 
 def get_join_keyboard():
@@ -150,9 +169,19 @@ def get_main_menu_keyboard(is_admin: bool):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
   await state.clear()
-  user_id = message.from_user.id
+  user_id = str(message.from_user.id)
   user_name = message.from_user.first_name
-  is_admin = user_id in ADMIN_IDS
+  is_admin = int(user_id) in ADMIN_IDS
+
+  # Register user in database persistently
+  db = load_database()
+  if user_id not in db["users"]:
+    db["users"][user_id] = {
+        "name": user_name,
+        "joined": str(message.date),
+        "status": "unverified",
+    }
+    save_database(db)
 
   text = (
       f"<b><u>GATENS NETWORK INFRASTRUCTURE</u></b>\n"
@@ -277,8 +306,7 @@ async def process_group_selected(
 
 @dp.message(VerificationSG.uploading_userid, F.photo | F.document | F.text)
 async def process_userid_upload(message: types.Message, state: FSMContext):
-  # Store reference to User ID proof
-  await state.update_data(userid_msg=message)
+  await state.update_data(userid_received=True)
 
   text = (
       "<b><u>ACCOUNT VERIFICATION PORTAL</u></b>\n"
@@ -295,24 +323,34 @@ async def process_userid_upload(message: types.Message, state: FSMContext):
 async def process_vouch_upload(message: types.Message, state: FSMContext):
   data = await state.get_data()
   target_group = data.get("target_group", "General Network")
-  user_id = message.from_user.id
+  user_id = str(message.from_user.id)
   username = message.from_user.username or "No Username"
+  vouch_info = message.text or "[Media Proof Uploaded]"
 
-  # Save to Pending Verifications dict for Admin Review
-  if user_id not in PENDING_VERIFICATIONS:
-    PENDING_VERIFICATIONS[user_id] = []
-  PENDING_VERIFICATIONS[user_id].append({
+  # Permanently save to JSON Database
+  db = load_database()
+  if user_id not in db["verifications"]:
+    db["verifications"][user_id] = []
+
+  submission_record = {
       "group": target_group,
       "username": username,
-      "vouch_info": message.text or "[Media Proof]",
-  })
+      "vouch_info": vouch_info,
+      "status": "PENDING",
+  }
+  db["verifications"][user_id].append(submission_record)
+
+  if user_id in db["users"]:
+    db["users"][user_id]["status"] = "pending_verification"
+
+  save_database(db)
 
   success_text = (
       "<b><u>VERIFICATION SUBMITTED SUCCESSFULLY</u></b>\n"
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
       f"Target Destination: <b>{target_group}</b>\n"
       "Status: <code>PENDING ADMIN AUDIT</code>\n\n"
-      "Your verification files have been recorded and sent to the network administration panel."
+      "Your verification files have been recorded persistently and sent to the network administration panel."
   )
 
   keyboard = InlineKeyboardMarkup(
@@ -326,7 +364,7 @@ async def process_vouch_upload(message: types.Message, state: FSMContext):
   await state.clear()
 
 
-# --- ADMIN PANEL LOGIC ---
+# --- FULL ADMIN PANEL LOGIC ---
 
 
 @dp.callback_query(F.data == "admin_panel")
@@ -335,13 +373,21 @@ async def process_admin_panel(callback: types.CallbackQuery):
     await callback.answer("Unauthorized action.", show_alert=True)
     return
 
-  total_pending = sum(len(v) for v in PENDING_VERIFICATIONS.values())
+  db = load_database()
+  total_users = len(db.get("users", {}))
+  total_pending = sum(
+      1
+      for subs in db.get("verifications", {}).values()
+      for sub in subs
+      if sub["status"] == "PENDING"
+  )
 
   text = (
       "<b><u>ADMIN CONTROL PANEL</u></b>\n"
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      f"• Total Pending Verifications: <b>{total_pending}</b>\n"
-      f"• System Status: <code>100% OPERATIONAL</code>\n\n"
+      f"• Total Tracked Users: <b>{total_users}</b>\n"
+      f"• Pending Verifications: <b>{total_pending}</b>\n"
+      f"• Database Status: <code>PERSISTENT & ACTIVE</code>\n\n"
       "Select an action below:"
   )
 
@@ -351,6 +397,12 @@ async def process_admin_panel(callback: types.CallbackQuery):
               InlineKeyboardButton(
                   text="VIEW PENDING SUBMISSIONS",
                   callback_data="admin_view_pending",
+              )
+          ],
+          [
+              InlineKeyboardButton(
+                  text="VIEW ALL REGISTERED USERS",
+                  callback_data="admin_view_users",
               )
           ],
           [
@@ -372,24 +424,67 @@ async def process_admin_view_pending(callback: types.CallbackQuery):
     await callback.answer("Unauthorized action.", show_alert=True)
     return
 
-  if not PENDING_VERIFICATIONS:
+  db = load_database()
+  verifications = db.get("verifications", {})
+
+  pending_items = [
+      (uid, sub)
+      for uid, subs in verifications.items()
+      for sub in subs
+      if sub["status"] == "PENDING"
+  ]
+
+  if not pending_items:
     text = (
         "<b><u>PENDING VERIFICATIONS</u></b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "No pending user submissions found in the queue."
+        "No pending user submissions found in the database queue."
     )
   else:
     text = (
         "<b><u>PENDING VERIFICATIONS QUEUE</u></b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     )
-    for uid, submissions in PENDING_VERIFICATIONS.items():
-      for sub in submissions:
-        text += (
-            f"• User ID: <code>{uid}</code> (@{sub['username']})\n"
-            f"  Target: <b>{sub['group']}</b>\n"
-            f"  Vouch Data: {sub['vouch_info']}\n\n"
-        )
+    for uid, sub in pending_items[:5]:  # Display up to 5 items to fit message limit
+      text += (
+          f"• User ID: <code>{uid}</code> (@{sub['username']})\n"
+          f"  Target: <b>{sub['group']}</b>\n"
+          f"  Proof: {sub['vouch_info']}\n\n"
+      )
+
+  keyboard = InlineKeyboardMarkup(
+      inline_keyboard=[[
+          InlineKeyboardButton(
+              text="« BACK TO ADMIN PANEL", callback_data="admin_panel"
+          )
+      ]]
+  )
+  await callback.message.edit_text(
+      text, reply_markup=keyboard, parse_mode="HTML"
+  )
+  await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_view_users")
+async def process_admin_view_users(callback: types.CallbackQuery):
+  if callback.from_user.id not in ADMIN_IDS:
+    await callback.answer("Unauthorized action.", show_alert=True)
+    return
+
+  db = load_database()
+  users = db.get("users", {})
+
+  text = (
+      f"<b><u>REGISTERED USERS DATABASE</u></b>\n"
+      f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      f"Total Users Logged: {len(users)}\n\n"
+  )
+  for uid, info in list(users.items())[
+      -5:
+  ]:  # Show last 5 registered users
+    text += (
+        f"• <code>{uid}</code> | {info['name']} | Status: {info['status']}\n"
+    )
 
   keyboard = InlineKeyboardMarkup(
       inline_keyboard=[[
