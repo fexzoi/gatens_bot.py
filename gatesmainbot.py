@@ -51,6 +51,7 @@ class VerificationSG(StatesGroup):
 
 
 class BroadcastSG(StatesGroup):
+  choosing_target = State()
   waiting_for_message = State()
 
 
@@ -201,7 +202,12 @@ async def process_main_menu(callback: types.CallbackQuery, state: FSMContext):
   is_admin = int(user_id) in ADMIN_IDS
 
   db = load_database()
-  status_label = db.get("users", {}).get(user_id, {}).get("status", "unverified").upper()
+  status_label = (
+      db.get("users", {})
+      .get(user_id, {})
+      .get("status", "unverified")
+      .upper()
+  )
 
   text = (
       f"<b><u>GATENS NETWORK HUB</u></b>\n"
@@ -329,13 +335,15 @@ async def process_vouch_upload(message: types.Message, state: FSMContext):
   db = load_database()
 
   # AUTOMATIC APPROVAL LOGIC
-  # If valid format/proof received, bot auto-approves instantly
-  auto_approved = True 
+  auto_approved = True
 
   if auto_approved:
     if user_id not in db["users"]:
-      db["users"][user_id] = {"name": message.from_user.first_name, "joined": str(message.date)}
-    
+      db["users"][user_id] = {
+          "name": message.from_user.first_name,
+          "joined": str(message.date),
+      }
+
     db["users"][user_id]["status"] = "verified"
     save_database(db)
 
@@ -356,7 +364,6 @@ async def process_vouch_upload(message: types.Message, state: FSMContext):
     await message.answer(success_text, reply_markup=keyboard, parse_mode="HTML")
     await state.clear()
   else:
-    # FALLBACK TO ADMIN MANUAL REVIEW IF BOT CANNOT HANDLE CASE
     if user_id not in db["verifications"]:
       db["verifications"][user_id] = []
 
@@ -386,14 +393,13 @@ async def process_vouch_upload(message: types.Message, state: FSMContext):
 @dp.message(Command("status", "check"))
 async def cmd_check_status(message: types.Message):
   target_user = message.from_user
-  
-  # Check if replying to someone else in a group
+
   if message.reply_to_message:
     target_user = message.reply_to_message.from_user
 
   user_id = str(target_user.id)
   db = load_database()
-  
+
   user_info = db.get("users", {}).get(user_id, {"status": "unverified"})
   status = user_info.get("status", "unverified").upper()
 
@@ -430,7 +436,9 @@ async def process_admin_panel(callback: types.CallbackQuery):
 
   db = load_database()
   total_users = len(db.get("users", {}))
-  verified_count = sum(1 for u in db.get("users", {}).values() if u.get("status") == "verified")
+  verified_count = sum(
+      1 for u in db.get("users", {}).values() if u.get("status") == "verified"
+  )
   unverified_count = total_users - verified_count
 
   text = (
@@ -474,18 +482,30 @@ async def process_admin_list_users(callback: types.CallbackQuery):
     await callback.answer("Unauthorized action.", show_alert=True)
     return
 
-  target_status = "verified" if callback.data == "admin_list_verified" else "unverified"
+  target_status = (
+      "verified" if callback.data == "admin_list_verified" else "unverified"
+  )
   db = load_database()
   users = db.get("users", {})
-  
-  filtered = [(uid, info) for uid, info in users.items() if info.get("status") == target_status]
 
-  text = f"<b><u>USER LIST: {target_status.upper()}</u></b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+  filtered = [
+      (uid, info)
+      for uid, info in users.items()
+      if info.get("status") == target_status
+  ]
+
+  text = (
+      f"<b><u>USER LIST: {target_status.upper()}</u></b>"
+      "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+  )
   if not filtered:
     text += "No records found in this category."
   else:
     for uid, info in filtered[:10]:
-      text += f"• <code>{uid}</code> | {info['name']} | Status: <b>{info['status']}</b>\n"
+      text += (
+          f"• <code>{uid}</code> | {info['name']} | Status:"
+          f" <b>{info['status']}</b>\n"
+      )
 
   keyboard = InlineKeyboardMarkup(
       inline_keyboard=[[
@@ -494,7 +514,9 @@ async def process_admin_list_users(callback: types.CallbackQuery):
           )
       ]]
   )
-  await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+  await callback.message.edit_text(
+      text, reply_markup=keyboard, parse_mode="HTML"
+  )
   await callback.answer()
 
 
@@ -543,11 +565,13 @@ async def process_admin_view_pending(callback: types.CallbackQuery):
   await callback.answer()
 
 
-# --- BROADCAST SYSTEM FOR ADMINS ---
+# --- BROADCAST SYSTEM FOR USERS & NETWORK GROUPS ---
 
 
 @dp.callback_query(F.data == "admin_broadcast")
-async def process_admin_broadcast_prompt(callback: types.CallbackQuery, state: FSMContext):
+async def process_admin_broadcast_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+):
   if callback.from_user.id not in ADMIN_IDS:
     await callback.answer("Unauthorized action.", show_alert=True)
     return
@@ -555,11 +579,57 @@ async def process_admin_broadcast_prompt(callback: types.CallbackQuery, state: F
   text = (
       "<b><u>BROADCAST MESSAGE PORTAL</u></b>\n"
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      "Send the text, announcement, or media message you want to broadcast to all registered bot users:"
+      "Select the target audience for your broadcast:"
+  )
+  keyboard = InlineKeyboardMarkup(
+      inline_keyboard=[
+          [
+              InlineKeyboardButton(
+                  text="ALL USERS", callback_data="bc_target_users"
+              ),
+              InlineKeyboardButton(
+                  text="ALL CHAT GROUPS / HUBS",
+                  callback_data="bc_target_groups",
+              ),
+          ],
+          [
+              InlineKeyboardButton(
+                  text="« CANCEL", callback_data="admin_panel"
+              )
+          ],
+      ]
+  )
+  await callback.message.edit_text(
+      text, reply_markup=keyboard, parse_mode="HTML"
+  )
+  await state.set_state(BroadcastSG.choosing_target)
+  await callback.answer()
+
+
+@dp.callback_query(
+    BroadcastSG.choosing_target, F.data.startswith("bc_target_")
+)
+async def process_bc_target_selected(
+    callback: types.CallbackQuery, state: FSMContext
+):
+  target_type = callback.data.split("_")[2]  # users or groups
+  await state.update_data(target_type=target_type)
+
+  target_name = (
+      "Registered Bot Users"
+      if target_type == "users"
+      else "Network Chat Groups & Hubs"
+  )
+
+  text = (
+      "<b><u>BROADCAST MESSAGE PORTAL</u></b>\n"
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      f"Target: <b>{target_name}</b>\n\n"
+      "Now, send the text, announcement, or media message you want to broadcast:"
   )
   keyboard = InlineKeyboardMarkup(
       inline_keyboard=[[
-          InlineKeyboardButton(text="« CANCEL", callback_data="admin_panel")
+          InlineKeyboardButton(text="« BACK", callback_data="admin_broadcast")
       ]]
   )
   await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -572,25 +642,35 @@ async def execute_broadcast(message: types.Message, state: FSMContext):
   if message.from_user.id not in ADMIN_IDS:
     return
 
-  db = load_database()
-  users = db.get("users", {})
-  
+  data = await state.get_data()
+  target_type = data.get("target_type", "users")
+
+  status_msg = await message.answer(
+      "<b>Broadcasting message... Please wait.</b>", parse_mode="HTML"
+  )
+
   success_count = 0
   fail_count = 0
 
-  status_msg = await message.answer("<b>Broadcasting message to users... Please wait.</b>", parse_mode="HTML")
+  if target_type == "users":
+    db = load_database()
+    targets = list(db.get("users", {}).keys())
+  else:
+    # Official network chat groups and hubs usernames/IDs
+    targets = ["@chatyear", "@fragte", "@whiteages", "@gatens"]
 
-  for uid in users.keys():
+  for target in targets:
     try:
-      await message.copy_to(chat_id=int(uid))
+      await message.copy_to(chat_id=target)
       success_count += 1
-      await asyncio.sleep(0.05) # Prevent flood limits
+      await asyncio.sleep(0.05)
     except Exception:
       fail_count += 1
 
   report = (
       "<b><u>BROADCAST COMPLETED</u></b>\n"
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      f"• Target Audience: <b>{target_type.upper()}</b>\n"
       f"• Successfully Delivered: <b>{success_count}</b>\n"
       f"• Failed / Blocked: <b>{fail_count}</b>"
   )
