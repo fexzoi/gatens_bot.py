@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# Configured credentials with your updated admin ID
+# Configured credentials with your admin ID
 TOKEN = os.getenv("BOT_TOKEN", "8841797167:AAGqfC5laKal7Z7D_Q_PVDQJa7sQRri9BIY")
 ADMIN_IDS = [8480522053]
 
@@ -66,7 +66,7 @@ async def start_web_server():
   print(f"Web server started on port {port}")
 
 
-# --- KEYBOARDS ---
+# --- SIDE-BY-SIDE DUAL KEYBOARDS ---
 
 
 def get_join_keyboard():
@@ -74,33 +74,27 @@ def get_join_keyboard():
       inline_keyboard=[
           [
               InlineKeyboardButton(
-                  text="JOIN MAIN CHANNEL", url="https://t.me/+3jHzHttnfHFlZWFh"
-              )
+                  text="MAIN CHANNEL", url="https://t.me/+3jHzHttnfHFlZWFh"
+              ),
+              InlineKeyboardButton(
+                  text="REDIRECT CH", url="https://t.me/gatens"
+              ),
           ],
           [
               InlineKeyboardButton(
-                  text="JOIN REDIRECT CHANNEL", url="https://t.me/gatens"
-              )
+                  text="CHAT GC", url="https://t.me/chatyear"
+              ),
+              InlineKeyboardButton(
+                  text="BUY & SELL", url="https://t.me/fragte"
+              ),
           ],
           [
               InlineKeyboardButton(
-                  text="JOIN CHAT GC", url="https://t.me/chatyear"
-              )
-          ],
-          [
+                  text="MARKET HUB", url="https://t.me/whiteages"
+              ),
               InlineKeyboardButton(
-                  text="JOIN BUY & SELL GC", url="https://t.me/fragte"
-              )
-          ],
-          [
-              InlineKeyboardButton(
-                  text="JOIN MARKET HUB", url="https://t.me/whiteages"
-              )
-          ],
-          [
-              InlineKeyboardButton(
-                  text="EXPLORE ECOSYSTEM BOTS", callback_data="show_bots"
-              )
+                  text="OTHER BOTS", callback_data="show_bots"
+              ),
           ],
           [
               InlineKeyboardButton(
@@ -116,26 +110,22 @@ def get_group_selection_keyboard():
       inline_keyboard=[
           [
               InlineKeyboardButton(
-                  text="VERIFY FOR CHAT GC (@chatyear)",
+                  text="CHAT GC (@chatyear)",
                   callback_data="verify_group_chatyear",
-              )
-          ],
-          [
+              ),
               InlineKeyboardButton(
-                  text="VERIFY FOR BUY & SELL GC (@fragte)",
+                  text="BUY & SELL (@fragte)",
                   callback_data="verify_group_fragte",
-              )
+              ),
           ],
           [
               InlineKeyboardButton(
-                  text="VERIFY FOR MARKET HUB (@whiteages)",
+                  text="MARKET HUB (@whiteages)",
                   callback_data="verify_group_whiteages",
-              )
-          ],
-          [
+              ),
               InlineKeyboardButton(
-                  text="« BACK TO MAIN MENU", callback_data="main_menu"
-              )
+                  text="« CANCEL", callback_data="main_menu"
+              ),
           ],
       ]
   )
@@ -145,20 +135,19 @@ def get_main_menu_keyboard(is_admin: bool):
   buttons = [
       [
           InlineKeyboardButton(
-              text="START ACCOUNT VERIFICATION", callback_data="start_verification"
-          )
-      ],
-      [
+              text="VERIFY ACCOUNT", callback_data="start_verification"
+          ),
           InlineKeyboardButton(
-              text="VIEW NETWORK DESTINATIONS", callback_data="view_hubs"
-          )
-      ],
+              text="NETWORK HUBS", callback_data="view_hubs"
+          ),
+      ]
   ]
   if is_admin:
     buttons.append([
         InlineKeyboardButton(
-            text="[ADMIN PANEL] AUDIT SUBMISSIONS", callback_data="admin_panel"
-        )
+            text="[ADMIN PANEL]", callback_data="admin_panel"
+        ),
+        InlineKeyboardButton(text="REFRESH MENU", callback_data="main_menu"),
     ])
   return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -393,19 +382,15 @@ async def process_admin_panel(callback: types.CallbackQuery):
       inline_keyboard=[
           [
               InlineKeyboardButton(
-                  text="VIEW PENDING SUBMISSIONS",
-                  callback_data="admin_view_pending",
-              )
+                  text="PENDING LIST", callback_data="admin_view_pending"
+              ),
+              InlineKeyboardButton(
+                  text="ALL USERS", callback_data="admin_view_users"
+              ),
           ],
           [
               InlineKeyboardButton(
-                  text="VIEW ALL REGISTERED USERS",
-                  callback_data="admin_view_users",
-              )
-          ],
-          [
-              InlineKeyboardButton(
-                  text="« RETURN TO MAIN MENU", callback_data="main_menu"
+                  text="« MAIN MENU", callback_data="main_menu"
               )
           ],
       ]
@@ -494,10 +479,10 @@ async def process_admin_view_users(callback: types.CallbackQuery):
   await callback.answer()
 
 
-# --- GROUP CHAT COMMANDS & /VERIFY ---
+# --- COMMAND ALIASES FOR VERIFY ---
 
 
-@dp.message(Command("verify"))
+@dp.message(Command("verify", "verification"))
 async def cmd_verify_command(message: types.Message, state: FSMContext):
   text = (
       "<b><u>SECURE GROUP VERIFICATION</u></b>\n"
@@ -528,7 +513,7 @@ async def cmd_reputation_info(message: types.Message):
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
       "Always verify user IDs through <code>@gatens_bot</code> before conducting deals."
   )
-  await message.answer(text, parse_mode="HTML")
+  await message.answer(text, parse_node="HTML")
 
 
 @dp.message(Command("rules"))
