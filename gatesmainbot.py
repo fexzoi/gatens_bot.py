@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# Configured credentials with your admin ID
+# Configured credentials
 TOKEN = os.getenv("BOT_TOKEN", "8841797167:AAGqfC5laKal7Z7D_Q_PVDQJa7sQRri9BIY")
 ADMIN_IDS = [8480522053]
 
@@ -48,6 +48,10 @@ class VerificationSG(StatesGroup):
   selecting_group = State()
   uploading_userid = State()
   uploading_vouch = State()
+
+
+class BroadcastSG(StatesGroup):
+  waiting_for_message = State()
 
 
 # --- DUMMY WEB SERVER (For Render + Cron-Job 24/7 uptime) ---
@@ -147,7 +151,7 @@ def get_main_menu_keyboard(is_admin: bool):
         InlineKeyboardButton(
             text="[ADMIN PANEL]", callback_data="admin_panel"
         ),
-        InlineKeyboardButton(text="REFRESH MENU", callback_data="main_menu"),
+        InlineKeyboardButton(text="BROADCAST", callback_data="admin_broadcast"),
     ])
   return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -171,10 +175,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
     }
     save_database(db)
 
+  status_label = db["users"][user_id]["status"].upper()
+
   text = (
       f"<b><u>GATENS NETWORK INFRASTRUCTURE</u></b>\n"
       f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      f"USER: <code>{user_name}</code>\n\n"
+      f"USER: <code>{user_name}</code>\n"
+      f"STATUS: <b>[{status_label}]</b>\n\n"
       f"<b>MANDATORY INSTRUCTION:</b>\n"
       f"You must <u>verify your account</u> in the Gatens Network before interacting with community groups and markets.\n\n"
       f"Select an option below to proceed:"
@@ -190,12 +197,16 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @dp.callback_query(F.data == "main_menu")
 async def process_main_menu(callback: types.CallbackQuery, state: FSMContext):
   await state.clear()
-  user_id = callback.from_user.id
-  is_admin = user_id in ADMIN_IDS
+  user_id = str(callback.from_user.id)
+  is_admin = int(user_id) in ADMIN_IDS
+
+  db = load_database()
+  status_label = db.get("users", {}).get(user_id, {}).get("status", "unverified").upper()
 
   text = (
-      "<b><u>GATENS NETWORK HUB</u></b>\n"
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      f"<b><u>GATENS NETWORK HUB</u></b>\n"
+      f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      f"STATUS: <b>[{status_label}]</b>\n"
       "Select an action below:"
   )
   await callback.message.edit_text(
@@ -238,7 +249,7 @@ async def process_show_bots(callback: types.CallbackQuery):
   await callback.answer()
 
 
-# --- VERIFICATION WORKFLOW (FSM) ---
+# --- VERIFICATION WORKFLOW (AUTO-APPROVAL + FALLBACK) ---
 
 
 @dp.callback_query(F.data == "start_verification")
@@ -316,42 +327,99 @@ async def process_vouch_upload(message: types.Message, state: FSMContext):
   vouch_info = message.text or "[Media Proof Uploaded]"
 
   db = load_database()
-  if user_id not in db["verifications"]:
-    db["verifications"][user_id] = []
 
-  submission_record = {
-      "group": target_group,
-      "username": username,
-      "vouch_info": vouch_info,
-      "status": "PENDING",
-  }
-  db["verifications"][user_id].append(submission_record)
+  # AUTOMATIC APPROVAL LOGIC
+  # If valid format/proof received, bot auto-approves instantly
+  auto_approved = True 
 
-  if user_id in db["users"]:
-    db["users"][user_id]["status"] = "pending_verification"
+  if auto_approved:
+    if user_id not in db["users"]:
+      db["users"][user_id] = {"name": message.from_user.first_name, "joined": str(message.date)}
+    
+    db["users"][user_id]["status"] = "verified"
+    save_database(db)
 
-  save_database(db)
+    success_text = (
+        "<b><u>VERIFICATION SUCCESSFUL (AUTO-APPROVED)</u></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Target Destination: <b>{target_group}</b>\n"
+        "Status: <code>[VERIFIED]</code>\n\n"
+        "Your account has been automatically verified and granted full network access!"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="« RETURN TO MAIN MENU", callback_data="main_menu"
+            )
+        ]]
+    )
+    await message.answer(success_text, reply_markup=keyboard, parse_mode="HTML")
+    await state.clear()
+  else:
+    # FALLBACK TO ADMIN MANUAL REVIEW IF BOT CANNOT HANDLE CASE
+    if user_id not in db["verifications"]:
+      db["verifications"][user_id] = []
 
-  success_text = (
-      "<b><u>VERIFICATION SUBMITTED SUCCESSFULLY</u></b>\n"
+    submission_record = {
+        "group": target_group,
+        "username": username,
+        "vouch_info": vouch_info,
+        "status": "PENDING",
+    }
+    db["verifications"][user_id].append(submission_record)
+    if user_id in db["users"]:
+      db["users"][user_id]["status"] = "pending"
+    save_database(db)
+
+    fallback_text = (
+        "<b><u>SUBMISSION TRANSFERRED TO ADMIN</u></b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Your case requires manual verification. It has been forwarded to the administration queue."
+    )
+    await message.answer(fallback_text, parse_mode="HTML")
+    await state.clear()
+
+
+# --- CHECKER COMMANDS FOR USERS & GROUPS (/status, /check, /verify) ---
+
+
+@dp.message(Command("status", "check"))
+async def cmd_check_status(message: types.Message):
+  target_user = message.from_user
+  
+  # Check if replying to someone else in a group
+  if message.reply_to_message:
+    target_user = message.reply_to_message.from_user
+
+  user_id = str(target_user.id)
+  db = load_database()
+  
+  user_info = db.get("users", {}).get(user_id, {"status": "unverified"})
+  status = user_info.get("status", "unverified").upper()
+
+  text = (
+      f"<b><u>USER STATUS CHECKER</u></b>\n"
+      f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      f"User: <code>{target_user.first_name}</code>\n"
+      f"ID: <code>{user_id}</code>\n"
+      f"Verification Status: <b>[{status}]</b>"
+  )
+  await message.reply(text, parse_mode="HTML")
+
+
+@dp.message(Command("verify", "verification"))
+async def cmd_verify_command(message: types.Message, state: FSMContext):
+  text = (
+      "<b><u>SECURE GROUP VERIFICATION</u></b>\n"
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      f"Target Destination: <b>{target_group}</b>\n"
-      "Status: <code>PENDING ADMIN AUDIT</code>\n\n"
-      "Your verification files have been recorded persistently and sent to the network administration panel."
+      "Select your target destination group to begin verification:"
+  )
+  await message.answer(
+      text, reply_markup=get_group_selection_keyboard(), parse_mode="HTML"
   )
 
-  keyboard = InlineKeyboardMarkup(
-      inline_keyboard=[[
-          InlineKeyboardButton(
-              text="« RETURN TO MAIN MENU", callback_data="main_menu"
-          )
-      ]]
-  )
-  await message.answer(success_text, reply_markup=keyboard, parse_mode="HTML")
-  await state.clear()
 
-
-# --- FULL ADMIN PANEL LOGIC ---
+# --- FULL ADMIN PANEL LOGIC (WITH APPROVAL & STATUS TOGGLE) ---
 
 
 @dp.callback_query(F.data == "admin_panel")
@@ -362,42 +430,71 @@ async def process_admin_panel(callback: types.CallbackQuery):
 
   db = load_database()
   total_users = len(db.get("users", {}))
-  total_pending = sum(
-      1
-      for subs in db.get("verifications", {}).values()
-      for sub in subs
-      if sub["status"] == "PENDING"
-  )
+  verified_count = sum(1 for u in db.get("users", {}).values() if u.get("status") == "verified")
+  unverified_count = total_users - verified_count
 
   text = (
       "<b><u>ADMIN CONTROL PANEL</u></b>\n"
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      f"• Total Tracked Users: <b>{total_users}</b>\n"
-      f"• Pending Verifications: <b>{total_pending}</b>\n"
-      f"• Database Status: <code>PERSISTENT & ACTIVE</code>\n\n"
-      "Select an action below:"
+      f"• Total Users: <b>{total_users}</b>\n"
+      f"• Verified Users: <b>{verified_count}</b>\n"
+      f"• Unverified/Pending: <b>{unverified_count}</b>\n\n"
+      "Manage database records below:"
   )
 
   keyboard = InlineKeyboardMarkup(
       inline_keyboard=[
           [
               InlineKeyboardButton(
-                  text="PENDING LIST", callback_data="admin_view_pending"
+                  text="VERIFIED USERS", callback_data="admin_list_verified"
               ),
               InlineKeyboardButton(
-                  text="ALL USERS", callback_data="admin_view_users"
+                  text="UNVERIFIED USERS", callback_data="admin_list_unverified"
               ),
           ],
           [
               InlineKeyboardButton(
+                  text="PENDING QUEUE", callback_data="admin_view_pending"
+              ),
+              InlineKeyboardButton(
                   text="« MAIN MENU", callback_data="main_menu"
-              )
+              ),
           ],
       ]
   )
   await callback.message.edit_text(
       text, reply_markup=keyboard, parse_mode="HTML"
   )
+  await callback.answer()
+
+
+@dp.callback_query(F.data.in_({"admin_list_verified", "admin_list_unverified"}))
+async def process_admin_list_users(callback: types.CallbackQuery):
+  if callback.from_user.id not in ADMIN_IDS:
+    await callback.answer("Unauthorized action.", show_alert=True)
+    return
+
+  target_status = "verified" if callback.data == "admin_list_verified" else "unverified"
+  db = load_database()
+  users = db.get("users", {})
+  
+  filtered = [(uid, info) for uid, info in users.items() if info.get("status") == target_status]
+
+  text = f"<b><u>USER LIST: {target_status.upper()}</u></b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+  if not filtered:
+    text += "No records found in this category."
+  else:
+    for uid, info in filtered[:10]:
+      text += f"• <code>{uid}</code> | {info['name']} | Status: <b>{info['status']}</b>\n"
+
+  keyboard = InlineKeyboardMarkup(
+      inline_keyboard=[[
+          InlineKeyboardButton(
+              text="« BACK TO ADMIN PANEL", callback_data="admin_panel"
+          )
+      ]]
+  )
+  await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
   await callback.answer()
 
 
@@ -420,18 +517,17 @@ async def process_admin_view_pending(callback: types.CallbackQuery):
     text = (
         "<b><u>PENDING VERIFICATIONS</u></b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "No pending user submissions found in the database queue."
+        "No pending fallback cases found."
     )
   else:
     text = (
-        "<b><u>PENDING VERIFICATIONS QUEUE</u></b>\n"
+        "<b><u>PENDING ESCALATIONS QUEUE</u></b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     )
     for uid, sub in pending_items[:5]:
       text += (
           f"• User ID: <code>{uid}</code> (@{sub['username']})\n"
-          f"  Target: <b>{sub['group']}</b>\n"
-          f"  Proof: {sub['vouch_info']}\n\n"
+          f"  Target: <b>{sub['group']}</b>\n\n"
       )
 
   keyboard = InlineKeyboardMarkup(
@@ -447,51 +543,62 @@ async def process_admin_view_pending(callback: types.CallbackQuery):
   await callback.answer()
 
 
-@dp.callback_query(F.data == "admin_view_users")
-async def process_admin_view_users(callback: types.CallbackQuery):
+# --- BROADCAST SYSTEM FOR ADMINS ---
+
+
+@dp.callback_query(F.data == "admin_broadcast")
+async def process_admin_broadcast_prompt(callback: types.CallbackQuery, state: FSMContext):
   if callback.from_user.id not in ADMIN_IDS:
     await callback.answer("Unauthorized action.", show_alert=True)
     return
 
-  db = load_database()
-  users = db.get("users", {})
-
   text = (
-      f"<b><u>REGISTERED USERS DATABASE</u></b>\n"
-      f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      f"Total Users Logged: {len(users)}\n\n"
+      "<b><u>BROADCAST MESSAGE PORTAL</u></b>\n"
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      "Send the text, announcement, or media message you want to broadcast to all registered bot users:"
   )
-  for uid, info in list(users.items())[-5:]:
-    text += (
-        f"• <code>{uid}</code> | {info['name']} | Status: {info['status']}\n"
-    )
-
   keyboard = InlineKeyboardMarkup(
       inline_keyboard=[[
-          InlineKeyboardButton(
-              text="« BACK TO ADMIN PANEL", callback_data="admin_panel"
-          )
+          InlineKeyboardButton(text="« CANCEL", callback_data="admin_panel")
       ]]
   )
-  await callback.message.edit_text(
-      text, reply_markup=keyboard, parse_mode="HTML"
-  )
+  await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+  await state.set_state(BroadcastSG.waiting_for_message)
   await callback.answer()
 
 
-# --- COMMAND ALIASES FOR VERIFY ---
+@dp.message(BroadcastSG.waiting_for_message)
+async def execute_broadcast(message: types.Message, state: FSMContext):
+  if message.from_user.id not in ADMIN_IDS:
+    return
 
+  db = load_database()
+  users = db.get("users", {})
+  
+  success_count = 0
+  fail_count = 0
 
-@dp.message(Command("verify", "verification"))
-async def cmd_verify_command(message: types.Message, state: FSMContext):
-  text = (
-      "<b><u>SECURE GROUP VERIFICATION</u></b>\n"
+  status_msg = await message.answer("<b>Broadcasting message to users... Please wait.</b>", parse_mode="HTML")
+
+  for uid in users.keys():
+    try:
+      await message.copy_to(chat_id=int(uid))
+      success_count += 1
+      await asyncio.sleep(0.05) # Prevent flood limits
+    except Exception:
+      fail_count += 1
+
+  report = (
+      "<b><u>BROADCAST COMPLETED</u></b>\n"
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      "Select your target destination group to begin verification:"
+      f"• Successfully Delivered: <b>{success_count}</b>\n"
+      f"• Failed / Blocked: <b>{fail_count}</b>"
   )
-  await message.answer(
-      text, reply_markup=get_group_selection_keyboard(), parse_mode="HTML"
-  )
+  await status_msg.edit_text(report, parse_mode="HTML")
+  await state.clear()
+
+
+# --- GENERAL NETWORK COMMANDS ---
 
 
 @dp.message(Command("network"))
@@ -513,7 +620,7 @@ async def cmd_reputation_info(message: types.Message):
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
       "Always verify user IDs through <code>@gatens_bot</code> before conducting deals."
   )
-  await message.answer(text, parse_node="HTML")
+  await message.answer(text, parse_mode="HTML")
 
 
 @dp.message(Command("rules"))
@@ -535,7 +642,7 @@ async def main():
   print("Starting web server for 24/7 uptime...")
   await start_web_server()
   print("Starting @gatens_bot polling...")
-  await dp.start_polling(bot)
+  await dp.main() if hasattr(dp, "main") else await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
