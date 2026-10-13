@@ -151,7 +151,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         save_database(db)
 
     status_label = db["users"][user_id]["status"].upper()
-    text = f"<b>GATENS NETWORK INFRASTRUCTURE</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUSER: <code>{user_name}</code>\nSTATUS: <b>[{status_label}]</b>\n\n<b>MANDATORY INSTRUCTION:</b>\nYou must verify your account in the Gatens Network before interacting with community groups and markets.\n\nSelect an option below to proceed:"
+    text = f"<b>GATENS NETWORK INFRASTRUCTURE</b>\nUSER: <code>{user_name}</code>\nSTATUS: <b>[{status_label}]</b>\n\n<b>MANDATORY INSTRUCTION:</b>\nYou must verify your account in the Gatens Network before interacting with community groups and markets.\n\nSelect an option below to proceed:"
     await message.answer(text, reply_markup=get_main_menu_keyboard(is_admin), parse_mode="HTML")
 
 @dp.callback_query(F.data == "main_menu")
@@ -161,19 +161,19 @@ async def process_main_menu(callback: types.CallbackQuery, state: FSMContext):
     is_admin = (callback.from_user.id in [OWNER_ID]) or (user_id in active_admin_sessions)
     db = load_database()
     status_label = db.get("users", {}).get(user_id, {}).get("status", "unverified").upper()
-    text = f"<b>GATENS NETWORK HUB</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSTATUS: <b>[{status_label}]</b>\nSelect an action below:"
+    text = f"<b>GATENS NETWORK HUB</b>\nSTATUS: <b>[{status_label}]</b>\nSelect an action below:"
     await callback.message.edit_text(text, reply_markup=get_main_menu_keyboard(is_admin), parse_mode="HTML")
     await callback.answer()
 
 @dp.callback_query(F.data == "view_hubs")
 async def process_view_hubs(callback: types.CallbackQuery):
-    text = "<b>OFFICIAL NETWORK HUBS & CHANNELS</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAccess our verified channels, community groups, and markets below:"
+    text = "<b>OFFICIAL NETWORK HUBS & CHANNELS</b>\nAccess our verified channels, community groups, and markets below:"
     await callback.message.edit_text(text, reply_markup=get_join_keyboard(), parse_mode="HTML")
     await callback.answer()
 
 @dp.callback_query(F.data == "show_bots")
 async def process_show_bots(callback: types.CallbackQuery):
-    text = "<b>GATENS ECOSYSTEM BOTS</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n• Core Infrastructure Bot: <code>@gatens_bot</code>\n• More specialized network utilities coming online."
+    text = "<b>GATENS ECOSYSTEM BOTS</b>\n• Core Infrastructure Bot: <code>@gatens_bot</code>\n• More specialized network utilities coming online."
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="« BACK TO DESTINATIONS", callback_data="view_hubs")]])
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
@@ -182,7 +182,7 @@ async def process_show_bots(callback: types.CallbackQuery):
 # --- ADMIN LOGIN SYSTEM ---
 @dp.message(Command("setpass"))
 async def cmd_setpass(message: types.Message, state: FSMContext):
-    await message.answer("🔑 **Admin Registration**\nSend the custom password you want to set for your admin panel access:")
+    await message.answer("🔑 <b>Admin Registration</b>\nSend the custom password you want to set for your admin panel access:", parse_mode="HTML")
     await state.set_state(AdminAuthSG.register_pass)
 
 @dp.message(AdminAuthSG.register_pass, F.text)
@@ -197,7 +197,7 @@ async def process_register_pass(message: types.Message, state: FSMContext):
     await state.clear()
     approval_keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ Approve", callback_data=f"apprv_{user.id}"), InlineKeyboardButton(text="❌ Reject", callback_data=f"rej_{user.id}")]])
     try:
-        await bot.send_message(chat_id=OWNER_ID, text=f"🔔 **New Admin Registration Request**\nUser: @{user.username or 'No Username'}\nID: `{user.id}`", parse_mode="HTML", reply_markup=approval_keyboard)
+        await bot.send_message(chat_id=OWNER_ID, text=f"🔔 <b>New Admin Registration Request</b>\nUser: @{user.username or 'No Username'}\nID: `{user.id}`", parse_mode="HTML", reply_markup=approval_keyboard)
     except Exception as e:
         logging.error(f"Failed to notify owner: {e}")
 
@@ -214,9 +214,9 @@ async def process_admin_approval_callback(callback: types.CallbackQuery):
         if action == "apprv":
             db["admins"][target_id]["is_approved"] = 1
             save_database(db)
-            await callback.message.edit_text(f"✅ Admin ID `{target_id}` has been **APPROVED**.")
+            await callback.message.edit_text(f"✅ Admin ID `{target_id}` has been <b>APPROVED</b>.", parse_mode="HTML")
             try:
-                await bot.send_message(chat_id=int(target_id), text="🎉 Your admin request was **APPROVED** by the Owner! You can now use `/login`.")
+                await bot.send_message(chat_id=int(target_id), text="🎉 Your admin request was <b>APPROVED</b> by the Owner! You can now use `/login`.", parse_mode="HTML")
             except:
                 pass
         else:
@@ -245,9 +245,9 @@ async def process_login_pass(message: types.Message, state: FSMContext):
     admin_data = db["admins"].get(user_id)
     if admin_data and pbkdf2_sha256.verify(password, admin_data["password_hash"]):
         active_admin_sessions.add(user_id)
-        await message.answer("✅ **Login Successful!** You now have full access to `/admin` commands.")
+        await message.answer("✅ <b>Login Successful!</b> You now have full access to `/admin` commands.", parse_mode="HTML")
     else:
-        await message.answer("❌ **Invalid Password.** Access denied.")
+        await message.answer("❌ <b>Invalid Password.</b> Access denied.", parse_mode="HTML")
     await state.clear()
 
 
@@ -258,7 +258,7 @@ async def cmd_create_post(event: types.Message | types.CallbackQuery, state: FSM
     message = event.message if isinstance(event, types.CallbackQuery) else event
     if isinstance(event, types.CallbackQuery):
         await event.answer()
-    text = "📝 **CONTROLLER POST CREATOR**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSend me the text or caption content for your post:"
+    text = "📝 <b>CONTROLLER POST CREATOR</b>\nSend me the text or caption content for your post:"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="« CANCEL", callback_data="main_menu")]])
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(PostCreatorSG.waiting_for_text)
@@ -266,7 +266,7 @@ async def cmd_create_post(event: types.Message | types.CallbackQuery, state: FSM
 @dp.message(PostCreatorSG.waiting_for_text, F.text)
 async def process_post_text(message: types.Message, state: FSMContext):
     await state.update_data(post_text=message.text)
-    text = "📸 **STEP 2/3: MEDIA ATTACHMENT**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSend a Photo or Video to attach, or click Skip to send text only."
+    text = "📸 <b>STEP 2/3: MEDIA ATTACHMENT</b>\nSend a Photo or Video to attach, or click Skip to send text only."
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="SKIP MEDIA ⏭️", callback_data="skip_media")]])
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(PostCreatorSG.waiting_for_media)
@@ -286,9 +286,9 @@ async def process_post_media(message: types.Message, state: FSMContext):
     await ask_for_buttons(message)
 
 async def ask_for_buttons(message: types.Message):
-    text = "🔗 **STEP 3/3: INLINE BUTTONS**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSend your inline buttons format:\n<code>Button Text - https://link.com</code>\n*(Each button on a new line)*\n\nOr type /skip to proceed without buttons."
+    text = "🔗 <b>STEP 3/3: INLINE BUTTONS</b>\nSend your inline buttons format:\n<code>Button Text - https://link.com</code>\n*(Each button on a new line)*\n\nOr type /skip to proceed without buttons."
     await message.answer(text, parse_mode="HTML")
-    await PostCreatorSG.waiting_for_buttons # state transition managed via handlers
+    await PostCreatorSG.waiting_for_buttons
 
 @dp.message(PostCreatorSG.waiting_for_buttons, Command("skip"))
 @dp.message(PostCreatorSG.waiting_for_buttons, F.text)
@@ -302,7 +302,7 @@ async def process_post_buttons(message: types.Message, state: FSMContext):
 
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons) if keyboard_buttons else None
     data = await state.get_data()
-    await message.answer("👀 **POST PREVIEW:**", parse_mode="HTML")
+    await message.answer("👀 <b>POST PREVIEW:</b>", parse_mode="HTML")
     
     text_content = data.get("post_text")
     media_id = data.get("post_media")
@@ -349,14 +349,26 @@ async def publish_custom_post(callback: types.CallbackQuery, state: FSMContext):
         except Exception:
             pass
 
-    await callback.message.edit_text(f"✅ **Post successfully published to {success} network channels/groups!**")
+    await callback.message.edit_text(f"✅ <b>Post successfully published to {success} network channels/groups!</b>", parse_mode="HTML")
     await state.clear()
 
 
 # --- VERIFICATION ---
 @dp.callback_query(F.data == "start_verification")
 async def process_start_verification(callback: types.CallbackQuery, state: FSMContext):
-    text = "<b>ACCOUNT VERIFICATION PORTAL</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSelect the specific community group or market where you want to complete your verification record:"
+    user_id = str(callback.from_user.id)
+    db = load_database()
+    
+    # Check if user is already remembered as verified in DB
+    user_data = db.get("users", {}).get(user_id, {})
+    if user_data.get("status") == "verified":
+        text = "<b>ACCOUNT VERIFICATION PORTAL</b>\n\n✅ <b>Your account is already verified in the network!</b>"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="« RETURN TO MAIN MENU", callback_data="main_menu")]])
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await callback.answer()
+        return
+
+    text = "<b>ACCOUNT VERIFICATION PORTAL</b>\nSelect the specific community group or market where you want to complete your verification record:"
     await callback.message.edit_text(text, reply_markup=get_group_selection_keyboard(), parse_mode="HTML")
     await state.set_state(VerificationSG.selecting_group)
     await callback.answer()
@@ -367,7 +379,7 @@ async def process_group_selected(callback: types.CallbackQuery, state: FSMContex
     group_names = {"chatyear": "Chat GC (@chatyear)", "fragte": "Buy & Sell GC (@fragte)", "whiteages": "Market Hub (@whiteages)"}
     selected_name = group_names.get(group_code, "Selected Group")
     await state.update_data(target_group=selected_name)
-    text = f"<b>TARGET: {selected_name}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n<b>STEP 1/2: USER ID PROOF SUBMISSION</b>\n\nPlease send or upload a clean screenshot of your Telegram User ID or profile badge."
+    text = f"<b>TARGET: {selected_name}</b>\n\n<b>STEP 1/2: USER ID PROOF SUBMISSION</b>\n\nPlease send or upload a clean screenshot of your Telegram User ID or profile badge."
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="« CANCEL & RETURN", callback_data="main_menu")]])
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(VerificationSG.uploading_userid)
@@ -376,7 +388,7 @@ async def process_group_selected(callback: types.CallbackQuery, state: FSMContex
 @dp.message(VerificationSG.uploading_userid, F.photo | F.document | F.text)
 async def process_userid_upload(message: types.Message, state: FSMContext):
     await state.update_data(userid_received=True)
-    text = "<b>ACCOUNT VERIFICATION PORTAL</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n<b>STEP 2/2: VOUCH CHANNEL PROOF</b>\n\nUser ID received successfully.\n\nNow, provide your Vouch Channel link or upload a screenshot of your reputation history."
+    text = "<b>ACCOUNT VERIFICATION PORTAL</b>\n\n<b>STEP 2/2: VOUCH CHANNEL PROOF</b>\n\nUser ID received successfully.\n\nNow, provide your Vouch Channel link or upload a screenshot of your reputation history."
     await message.answer(text, parse_mode="HTML")
     await state.set_state(VerificationSG.uploading_vouch)
 
@@ -394,7 +406,7 @@ async def process_vouch_upload(message: types.Message, state: FSMContext):
         db["users"][user_id]["verified_chats"].append(target_group)
     db["users"][user_id]["status"] = "verified"
     save_database(db)
-    success_text = f"<b>VERIFICATION SUCCESSFUL (AUTO-APPROVED)</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nTarget Destination: <b>{target_group}</b>\nStatus: <code>[VERIFIED]</code>\n\nYour account has been verified and registered for this section!"
+    success_text = f"<b>VERIFICATION SUCCESSFUL (AUTO-APPROVED)</b>\nTarget Destination: <b>{target_group}</b>\nStatus: <code>[VERIFIED]</code>\n\nYour account has been verified and permanently remembered in our database!"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="« RETURN TO MAIN MENU", callback_data="main_menu")]])
     await message.answer(success_text, reply_markup=keyboard, parse_mode="HTML")
     await state.clear()
@@ -411,7 +423,7 @@ async def process_admin_panel(event: types.Message | types.CallbackQuery):
         if isinstance(event, types.CallbackQuery):
             await event.answer("🔒 Unauthorized. Please /login first.", show_alert=True)
         else:
-            await message.answer("🔒 **Access Denied.** Please `/login` with your authorized admin password.")
+            await message.answer("🔒 <b>Access Denied.</b> Please `/login` with your authorized admin password.", parse_mode="HTML")
         return
     if isinstance(event, types.CallbackQuery):
         await event.answer()
@@ -419,7 +431,7 @@ async def process_admin_panel(event: types.Message | types.CallbackQuery):
     total_users = len(db.get("users", {}))
     verified_count = sum(1 for u in db.get("users", {}).values() if u.get("status") == "verified")
     unverified_count = total_users - verified_count
-    text = f"<b>ADMIN CONTROL PANEL</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n• Total Users: <b>{total_users}</b>\n• Verified Users: <b>{verified_count}</b>\n• Unverified Users: <b>{unverified_count}</b>\n\nManage database records below:"
+    text = f"<b>ADMIN CONTROL PANEL</b>\n• Total Users: <b>{total_users}</b>\n• Verified Users: <b>{verified_count}</b>\n• Unverified Users: <b>{unverified_count}</b>\n\nManage database records below:"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="VERIFIED USERS", callback_data="admin_list_verified"), InlineKeyboardButton(text="UNVERIFIED USERS", callback_data="admin_list_unverified")],
         [InlineKeyboardButton(text="« MAIN MENU", callback_data="main_menu")]
@@ -435,7 +447,7 @@ async def process_admin_broadcast_prompt(callback: types.CallbackQuery, state: F
     if (callback.from_user.id not in [OWNER_ID]) and (user_id not in active_admin_sessions):
         await callback.answer("Unauthorized action.", show_alert=True)
         return
-    text = "<b>BROADCAST MESSAGE PORTAL</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSelect the target audience for your broadcast:"
+    text = "<b>BROADCAST MESSAGE PORTAL</b>\nSelect the target audience for your broadcast:"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="ALL USERS", callback_data="bc_target_users"), InlineKeyboardButton(text="ALL DISCOVERED HUBS/GCs", callback_data="bc_target_groups")],
         [InlineKeyboardButton(text="« CANCEL", callback_data="admin_panel")]
@@ -449,7 +461,7 @@ async def process_bc_target_selected(callback: types.CallbackQuery, state: FSMCo
     target_type = callback.data.split("_")[2]
     await state.update_data(target_type=target_type)
     target_name = "Registered Bot Users" if target_type == "users" else "Discovered Network Chat Groups & Hubs"
-    text = f"<b>BROADCAST MESSAGE PORTAL</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nTarget: <b>{target_name}</b>\n\nNow, send the text, announcement, or media message you want to broadcast:"
+    text = f"<b>BROADCAST MESSAGE PORTAL</b>\nTarget: <b>{target_name}</b>\n\nNow, send the text, announcement, or media message you want to broadcast:"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="« BACK", callback_data="admin_broadcast")]])
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(BroadcastSG.waiting_for_message)
@@ -479,7 +491,7 @@ async def execute_broadcast(message: types.Message, state: FSMContext):
             await asyncio.sleep(0.05)
         except Exception:
             fail_count += 1
-    report = f"<b>BROADCAST COMPLETED</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n• Target Audience: <b>{target_type.upper()}</b>\n• Successfully Delivered: <b>{success_count}</b>\n• Failed / Blocked: <b>{fail_count}</b>"
+    report = f"<b>BROADCAST COMPLETED</b>\n• Target Audience: <b>{target_type.upper()}</b>\n• Successfully Delivered: <b>{success_count}</b>\n• Failed / Blocked: <b>{fail_count}</b>"
     await status_msg.edit_text(report, parse_mode="HTML")
     await state.clear()
 
@@ -487,7 +499,7 @@ async def execute_broadcast(message: types.Message, state: FSMContext):
 # --- NETWORK COMMANDS ---
 @dp.message(Command("network"))
 async def cmd_network_info(message: types.Message):
-    text = "<b>GATENS NETWORK DIRECTORY</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n• Main Announcement: Check pinned message\n• Support Portal: <code>@gatens</code>\n• Status: Operational"
+    text = "<b>GATENS NETWORK DIRECTORY</b>\n• Main Announcement: Check pinned message\n• Support Portal: <code>@gatens</code>\n• Status: Operational"
     await message.answer(text, parse_mode="HTML")
 
 
