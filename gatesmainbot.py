@@ -462,6 +462,38 @@ async def process_post_buttons(message: types.Message, state: FSMContext):
     await state.update_data(final_markup=keyboard_buttons)
     await message.answer("Ready to send? Choose below:", reply_markup=confirm_kb)
 
+@dp.callback_query(F.data == "publish_custom_post")
+async def publish_custom_post(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    text_content = data.get("post_text")
+    media_id = data.get("post_media")
+    media_type = data.get("media_type")
+    keyboard_buttons = data.get("final_markup")
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons) if keyboard_buttons else None
+
+    db = load_database()
+    discovered_chats = list(db.get("broadcast_targets", {}).keys())
+    default_chats = ["@chatyear", "@fragte", "@whiteages", "@gatens"]
+    targets = list(set(discovered_chats + default_chats))
+
+    success = 0
+    for target in targets:
+        try:
+            if media_id:
+                if media_type == "photo":
+                    await bot.send_photo(chat_id=target, photo=media_id, caption=text_content, reply_markup=reply_markup)
+                else:
+                    await bot.send_video(chat_id=target, video=media_id, caption=text_content, reply_markup=reply_markup)
+            else:
+                await bot.send_message(chat_id=target, text=text_content, reply_markup=reply_markup)
+            success += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            pass
+
+    await callback.message.edit_text(f"✅ **Post successfully published to {success} network channels/groups!**")
+    await state.clear()
+
 
 # --- VERIFICATION WORKFLOW ---
 
