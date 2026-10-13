@@ -1,1 +1,1 @@
-worker: python gatens_bot.py
+worker: python gatesmainbot.py
