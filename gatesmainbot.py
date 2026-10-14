@@ -32,7 +32,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8841797167:AAEixfNdHXIbe2yjwbQX3-Ba9fYr5zq-5cU").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8841797167:AAHksByTG1VKJCePr6qukde48M5e58Loa7c").strip()
 OWNER_ID = int(os.getenv("OWNER_ID", "8480522053"))
 DB_FILE = Path(os.getenv("DATABASE_FILE", "gatens_database.json"))
 PORT = int(os.getenv("PORT", "8080"))
